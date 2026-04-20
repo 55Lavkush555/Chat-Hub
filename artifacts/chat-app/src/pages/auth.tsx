@@ -46,9 +46,10 @@ export function AuthPage() {
             setLocation("/chat");
           },
           onError: (error) => {
+            const msg = (error?.data as { error?: string })?.error ?? "Invalid credentials";
             toast({
               title: "Login failed",
-              description: error.error?.error || "Invalid credentials",
+              description: msg,
               variant: "destructive",
             });
           },
@@ -63,9 +64,10 @@ export function AuthPage() {
             setLocation("/chat");
           },
           onError: (error) => {
+            const msg = (error?.data as { error?: string })?.error ?? "Could not create account";
             toast({
               title: "Registration failed",
-              description: error.error?.error || "Could not create account",
+              description: msg,
               variant: "destructive",
             });
           },

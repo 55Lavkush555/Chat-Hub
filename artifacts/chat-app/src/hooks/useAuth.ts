@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useGetMe, User } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 
 const TOKEN_KEY = "chat_token";
 
@@ -8,11 +8,12 @@ export function useAuth() {
     () => localStorage.getItem(TOKEN_KEY)
   );
 
-  const { data: user, isLoading: isUserLoading, refetch } = useGetMe({
+  const { data: user, isLoading: isUserLoading } = useGetMe({
     query: {
       enabled: !!token,
       retry: false,
-    }
+      queryKey: getGetMeQueryKey(),
+    },
   });
 
   const login = (newToken: string) => {
@@ -27,11 +28,10 @@ export function useAuth() {
 
   return {
     token,
-    user,
+    user: user ?? null,
     isAuthenticated: !!token && !!user,
     isLoading: !!token && isUserLoading,
     login,
     logout,
-    refetch,
   };
 }
