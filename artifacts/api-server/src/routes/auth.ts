@@ -70,7 +70,14 @@ router.post("/login", async (req: Request, res: Response) => {
 // GET /api/auth/me
 router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const user = await User.findById(req.userId);
+    // Guard against stale tokens that contain a UUID instead of a MongoDB ObjectId
+    const id = req.userId!;
+    if (!/^[a-f\d]{24}$/i.test(id)) {
+      res.status(401).json({ error: "Invalid token — please log in again" });
+      return;
+    }
+
+    const user = await User.findById(id);
     if (!user) {
       res.status(401).json({ error: "User not found" });
       return;

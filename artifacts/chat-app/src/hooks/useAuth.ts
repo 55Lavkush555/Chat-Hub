@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -9,7 +8,6 @@ export function useAuth() {
   const [token, setToken] = useState<string | null>(
     () => localStorage.getItem(TOKEN_KEY),
   );
-  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
   const { data: user, isLoading: isUserLoading } = useGetMe({
@@ -28,9 +26,8 @@ export function useAuth() {
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
-    // Clear all cached queries so stale user data doesn't linger
+    // Clear all cached queries so stale user data does not linger
     queryClient.clear();
-    setLocation("/login");
   };
 
   return {

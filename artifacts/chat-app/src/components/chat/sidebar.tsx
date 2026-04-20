@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useGetUsers, useGetOnlineUsers, User } from "@workspace/api-client-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,12 @@ interface SidebarProps {
 export function Sidebar({ currentUser, selectedUser, onSelectUser }: SidebarProps) {
   const [search, setSearch] = useState("");
   const { logout } = useAuth();
+  const [, setLocation] = useLocation();
+
+  const handleLogout = () => {
+    logout();
+    setLocation("/login");
+  };
 
   const { data: onlineUsersData } = useGetOnlineUsers();
   const { data: searchUsersData } = useGetUsers(
@@ -62,7 +69,7 @@ export function Sidebar({ currentUser, selectedUser, onSelectUser }: SidebarProp
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={logout} title="Logout" className="text-muted-foreground hover:text-destructive">
+            <Button variant="ghost" size="icon" onClick={handleLogout} title="Logout" className="text-muted-foreground hover:text-destructive">
               <LogOut className="h-5 w-5" />
             </Button>
           </div>
