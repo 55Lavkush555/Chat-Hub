@@ -3,20 +3,28 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Real-Time Chat API
+
 servers:
   - url: /api
     description: Base API path
+
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User operations
+  - name: messages
+    description: Message operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,7 +32,163 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBody"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: Get all users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by username
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsersListResponse"
+
+  /users/online:
+    get:
+      operationId: getOnlineUsers
+      tags: [users]
+      summary: Get online users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of online users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsersListResponse"
+
+  /messages/{userId}:
+    get:
+      operationId: getMessages
+      tags: [messages]
+      summary: Get messages between current user and another user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesListResponse"
+
+  /messages:
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageBody"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +198,119 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    RegisterBody:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+        password:
+          type: string
+          minLength: 6
+      required:
+        - username
+        - password
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - token
+        - user
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        avatarUrl:
+          type: string
+        isOnline:
+          type: boolean
+        lastSeen:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - isOnline
+
+    UsersListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+      required:
+        - users
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        receiverId:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        senderUsername:
+          type: string
+      required:
+        - id
+        - senderId
+        - receiverId
+        - content
+        - createdAt
+
+    MessagesListResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+      required:
+        - messages
+
+    SendMessageBody:
+      type: object
+      properties:
+        receiverId:
+          type: string
+        content:
+          type: string
+      required:
+        - receiverId
+        - content
