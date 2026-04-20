@@ -1,10 +1,9 @@
 import type { Server as SocketServer, Socket } from "socket.io";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { User } from "../models/user.js";
 import { verifyToken } from "../lib/jwt.js";
 import { logger } from "../lib/logger.js";
 
-// Track online users: userId -> socketId set
+// Track online users: userId -> set of socketIds
 const onlineUsers = new Map<string, Set<string>>();
 
 function getOnlineUserIds(): string[] {
@@ -12,26 +11,24 @@ function getOnlineUserIds(): string[] {
 }
 
 async function broadcastOnlineUsers(io: SocketServer) {
-  const ids = getOnlineUserIds();
-  io.emit("online_users", ids);
+  io.emit("online_users", getOnlineUserIds());
 }
 
 async function setUserOnline(userId: string, online: boolean) {
   try {
-    await db
-      .update(usersTable)
-      .set({
-        isOnline: online,
-        lastSeen: online ? undefined : new Date(),
-      })
-      .where(eq(usersTable.id, userId));
+    await User.findByIdAndUpdate(userId, {
+      isOnline: online,
+      ...(online ? {} : { lastSeen: new Date() }),
+    });
   } catch (err) {
     logger.error({ err }, "Failed to update user online status");
   }
 }
 
+type AuthedSocket = Socket & { userId: string; username: string };
+
 export function setupSocketHandlers(io: SocketServer) {
-  // Authenticate socket connections using JWT
+  // Authenticate every socket connection via JWT in handshake
   io.use((socket: Socket, next) => {
     const token = socket.handshake.auth?.["token"] as string | undefined;
     if (!token) {
@@ -41,10 +38,8 @@ export function setupSocketHandlers(io: SocketServer) {
 
     try {
       const payload = verifyToken(token);
-      (socket as Socket & { userId: string; username: string }).userId =
-        payload.userId;
-      (socket as Socket & { userId: string; username: string }).username =
-        payload.username;
+      (socket as AuthedSocket).userId = payload.userId;
+      (socket as AuthedSocket).username = payload.username;
       next();
     } catch {
       next(new Error("Authentication error: invalid token"));
@@ -52,45 +47,43 @@ export function setupSocketHandlers(io: SocketServer) {
   });
 
   io.on("connection", async (socket: Socket) => {
-    const userId = (socket as Socket & { userId: string }).userId;
-    const username = (socket as Socket & { username: string }).username;
+    const { userId, username } = socket as AuthedSocket;
 
     logger.info({ userId, username, socketId: socket.id }, "Socket connected");
 
-    // Join user's personal room for direct messages
+    // Join user's personal room so others can DM them directly
     socket.join(`user:${userId}`);
 
-    // Track online status
+    // Track presence
     if (!onlineUsers.has(userId)) {
       onlineUsers.set(userId, new Set());
     }
     onlineUsers.get(userId)!.add(socket.id);
+
     await setUserOnline(userId, true);
     await broadcastOnlineUsers(io);
 
-    // Handle join event (client signals they are ready)
+    // Client signals readiness
     socket.on("join", () => {
       logger.info({ userId }, "User joined chat");
     });
 
-    // Handle typing indicator
-    socket.on(
-      "typing",
-      (data: { receiverId: string; isTyping: boolean }) => {
-        io.to(`user:${data.receiverId}`).emit("typing", {
-          userId,
-          isTyping: data.isTyping,
-        });
-      },
-    );
+    // Typing indicators — relay to target user's room
+    socket.on("typing", (data: { receiverId: string; isTyping: boolean }) => {
+      io.to(`user:${data.receiverId}`).emit("typing", {
+        userId,
+        isTyping: data.isTyping,
+      });
+    });
 
-    // Handle disconnect
+    // Cleanup on disconnect
     socket.on("disconnect", async () => {
       logger.info({ userId, socketId: socket.id }, "Socket disconnected");
 
       const userSockets = onlineUsers.get(userId);
       if (userSockets) {
         userSockets.delete(socket.id);
+        // Only mark offline when ALL tabs/connections are gone
         if (userSockets.size === 0) {
           onlineUsers.delete(userId);
           await setUserOnline(userId, false);

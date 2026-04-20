@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
-import { db, messagesTable, usersTable } from "@workspace/db";
-import { eq, or, and } from "drizzle-orm";
+import mongoose from "mongoose";
+import { Message, formatMessage } from "../models/message.js";
+import { User } from "../models/user.js";
 import { SendMessageBody } from "@workspace/api-zod";
 import { requireAuth, AuthRequest } from "../middlewares/auth.js";
 import type { Server as SocketServer } from "socket.io";
@@ -8,43 +9,31 @@ import type { Server as SocketServer } from "socket.io";
 const router = Router();
 
 export function createMessagesRouter(io: SocketServer) {
-  // GET /api/messages/:userId
+  // GET /api/messages/:userId — fetch conversation history
   router.get("/:userId", requireAuth, async (req: AuthRequest, res: Response) => {
     const otherId = req.params["userId"];
     const myId = req.userId!;
 
     try {
-      const messages = await db
-        .select({
-          id: messagesTable.id,
-          senderId: messagesTable.senderId,
-          receiverId: messagesTable.receiverId,
-          content: messagesTable.content,
-          createdAt: messagesTable.createdAt,
-          senderUsername: usersTable.username,
-        })
-        .from(messagesTable)
-        .leftJoin(usersTable, eq(messagesTable.senderId, usersTable.id))
-        .where(
-          or(
-            and(
-              eq(messagesTable.senderId, myId),
-              eq(messagesTable.receiverId, otherId),
-            ),
-            and(
-              eq(messagesTable.senderId, otherId),
-              eq(messagesTable.receiverId, myId),
-            ),
-          ),
-        )
-        .orderBy(messagesTable.createdAt);
+      const myOid = new mongoose.Types.ObjectId(myId);
+      const otherOid = new mongoose.Types.ObjectId(otherId);
+
+      const messages = await Message.find({
+        $or: [
+          { senderId: myOid, receiverId: otherOid },
+          { senderId: otherOid, receiverId: myOid },
+        ],
+      }).sort({ createdAt: 1 });
+
+      // Fetch usernames for all senders in one query
+      const senderIds = [...new Set(messages.map((m) => m.senderId.toString()))];
+      const senders = await User.find({ _id: { $in: senderIds } }).select("username");
+      const usernameMap = new Map(senders.map((u) => [u._id.toString(), u.username]));
 
       res.json({
-        messages: messages.map((m) => ({
-          ...m,
-          createdAt: m.createdAt.toISOString(),
-          senderUsername: m.senderUsername ?? undefined,
-        })),
+        messages: messages.map((m) =>
+          formatMessage(m, usernameMap.get(m.senderId.toString())),
+        ),
       });
     } catch (err) {
       req.log.error({ err }, "GetMessages error");
@@ -52,7 +41,7 @@ export function createMessagesRouter(io: SocketServer) {
     }
   });
 
-  // POST /api/messages
+  // POST /api/messages — send a new message
   router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const parsed = SendMessageBody.safeParse(req.body);
     if (!parsed.success) {
@@ -64,27 +53,16 @@ export function createMessagesRouter(io: SocketServer) {
     const senderId = req.userId!;
 
     try {
-      const [message] = await db
-        .insert(messagesTable)
-        .values({ senderId, receiverId, content })
-        .returning();
+      const message = await Message.create({
+        senderId: new mongoose.Types.ObjectId(senderId),
+        receiverId: new mongoose.Types.ObjectId(receiverId),
+        content,
+      });
 
-      const [sender] = await db
-        .select({ username: usersTable.username })
-        .from(usersTable)
-        .where(eq(usersTable.id, senderId))
-        .limit(1);
+      const sender = await User.findById(senderId).select("username");
+      const formatted = formatMessage(message, sender?.username);
 
-      const formatted = {
-        id: message.id,
-        senderId: message.senderId,
-        receiverId: message.receiverId,
-        content: message.content,
-        createdAt: message.createdAt.toISOString(),
-        senderUsername: sender?.username,
-      };
-
-      // Emit to receiver's socket room
+      // Emit to both sender and receiver rooms for instant delivery
       io.to(`user:${receiverId}`).emit("new_message", formatted);
       io.to(`user:${senderId}`).emit("new_message", formatted);
 

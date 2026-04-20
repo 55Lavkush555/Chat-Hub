@@ -1,30 +1,12 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
+import { User, formatUser } from "../models/user.js";
 import { signToken } from "../lib/jwt.js";
 import { requireAuth, AuthRequest } from "../middlewares/auth.js";
 
 const router = Router();
-
 const SALT_ROUNDS = 10;
-
-function formatUser(user: {
-  id: string;
-  username: string;
-  avatarUrl: string | null;
-  isOnline: boolean;
-  lastSeen: Date | null;
-}) {
-  return {
-    id: user.id,
-    username: user.username,
-    avatarUrl: user.avatarUrl ?? undefined,
-    isOnline: user.isOnline,
-    lastSeen: user.lastSeen?.toISOString() ?? undefined,
-  };
-}
 
 // POST /api/auth/register
 router.post("/register", async (req: Request, res: Response) => {
@@ -37,24 +19,16 @@ router.post("/register", async (req: Request, res: Response) => {
   const { username, password } = parsed.data;
 
   try {
-    const existing = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.username, username))
-      .limit(1);
-
-    if (existing.length > 0) {
+    const existing = await User.findOne({ username });
+    if (existing) {
       res.status(400).json({ error: "Username already taken" });
       return;
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const [user] = await db
-      .insert(usersTable)
-      .values({ username, passwordHash })
-      .returning();
+    const user = await User.create({ username, passwordHash });
 
-    const token = signToken({ userId: user.id, username: user.username });
+    const token = signToken({ userId: user._id.toString(), username: user.username });
     res.status(201).json({ token, user: formatUser(user) });
   } catch (err) {
     req.log.error({ err }, "Register error");
@@ -73,12 +47,7 @@ router.post("/login", async (req: Request, res: Response) => {
   const { username, password } = parsed.data;
 
   try {
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.username, username))
-      .limit(1);
-
+    const user = await User.findOne({ username });
     if (!user) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
@@ -90,7 +59,7 @@ router.post("/login", async (req: Request, res: Response) => {
       return;
     }
 
-    const token = signToken({ userId: user.id, username: user.username });
+    const token = signToken({ userId: user._id.toString(), username: user.username });
     res.json({ token, user: formatUser(user) });
   } catch (err) {
     req.log.error({ err }, "Login error");
@@ -101,17 +70,11 @@ router.post("/login", async (req: Request, res: Response) => {
 // GET /api/auth/me
 router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, req.userId!))
-      .limit(1);
-
+    const user = await User.findById(req.userId);
     if (!user) {
       res.status(401).json({ error: "User not found" });
       return;
     }
-
     res.json(formatUser(user));
   } catch (err) {
     req.log.error({ err }, "GetMe error");
