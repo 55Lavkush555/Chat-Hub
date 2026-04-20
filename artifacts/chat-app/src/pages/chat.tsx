@@ -7,7 +7,7 @@ import { ChatArea } from "@/components/chat/chat-area";
 import { User } from "@workspace/api-client-react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export function ChatPage() {
   const [, setLocation] = useLocation();
@@ -15,7 +15,7 @@ export function ChatPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  const { socket, typingUsers, emitTyping } = useSocket(token, currentUser?.id);
+  const { typingUsers, emitTyping } = useSocket(token, currentUser?.id);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -43,33 +43,37 @@ export function ChatPage() {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex w-80 lg:w-96 border-r border-border bg-sidebar flex-col">
-        <Sidebar 
-          currentUser={currentUser} 
-          selectedUser={selectedUser} 
-          onSelectUser={handleSelectUser} 
+        <Sidebar
+          currentUser={currentUser}
+          selectedUser={selectedUser}
+          onSelectUser={handleSelectUser}
         />
       </div>
 
-      {/* Mobile Sidebar (Sheet) */}
+      {/* Mobile Sidebar (controlled Sheet — no SheetTrigger needed) */}
       <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-80 flex flex-col bg-sidebar">
-          <Sidebar 
-            currentUser={currentUser} 
-            selectedUser={selectedUser} 
-            onSelectUser={handleSelectUser} 
+          <Sidebar
+            currentUser={currentUser}
+            selectedUser={selectedUser}
+            onSelectUser={handleSelectUser}
           />
         </SheetContent>
       </Sheet>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full bg-background relative">
-        {/* Mobile header for sidebar trigger */}
+        {/* Mobile header — plain button opens the controlled Sheet */}
         <div className="md:hidden flex items-center p-3 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="mr-2">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mr-2"
+            onClick={() => setIsMobileSidebarOpen(true)}
+            data-testid="button-open-sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
           {selectedUser ? (
             <div className="font-semibold">{selectedUser.username}</div>
           ) : (
@@ -77,7 +81,7 @@ export function ChatPage() {
           )}
         </div>
 
-        <ChatArea 
+        <ChatArea
           currentUser={currentUser}
           selectedUser={selectedUser}
           typingUsers={typingUsers}
